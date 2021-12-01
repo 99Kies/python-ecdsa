@@ -59,6 +59,8 @@ from . import numbertheory
 from .util import bit_length
 from ._compat import remove_whitespace
 
+import hashlib
+import hmac
 
 class RSZeroError(RuntimeError):
     pass
@@ -247,6 +249,27 @@ class Private_key(object):
             raise RSZeroError("amazingly unlucky random number s")
         return Signature(r, s)
 
+    def deterministic_s256_k(self, z):
+        G = self.public_key.generator
+        n = G.order()
+        k = b'\x00' * 32
+        v = b'\x01' * 32
+        if z > n:
+            z -= n
+        z_bytes = z.to_bytes(32, 'big')
+        secret_bytes = self.secret_multiplier.to_bytes(32, 'big')
+        s256 = hashlib.sha256
+        k = hmac.new(k, v + b'\x00' + secret_bytes + z_bytes, s256).digest()
+        v = hmac.new(k, v, s256).digest()
+        k = hmac.new(k, v + b'\x01' + secret_bytes + z_bytes, s256).digest()
+        v = hmac.new(k, v, s256).digest()
+        while True:
+            v = hmac.new(k, v, s256).digest()
+            candidate = int.from_bytes(v, 'big')
+            if candidate >= 1 and candidate < n:
+                return candidate  # <2>
+            k = hmac.new(k, v + b'\x00', s256).digest()
+            v = hmac.new(k, v, s256).digest()
 
 def int_to_string(x):
     """Convert integer x into a string of bytes, as per X9.62."""
